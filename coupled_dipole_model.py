@@ -63,7 +63,7 @@ class DipoleParameters:
 
     def alpha(self, w, radius, kind): 
         ### assumes z axis is long axis, and y = x 
-        k = w/c
+        k = w/c*self.n
         # cs equals long axis, a equals short axis
         cs = radius[0]; a = radius[1]
         if cs == a:
@@ -87,7 +87,8 @@ class DipoleParameters:
                 lE = a
                 L = Ly
                 D = Dy
-            alphaR = V/(4*np.pi)*(eps-1)/(1+L*(eps-1))
+            eps_b = self.n**2
+            alphaR = V/(4*np.pi)*(eps/eps_b-1)/(1+L*(eps/eps_b-1))
             alphaMW = alphaR / (1 - k**2/lE *D*alphaR - 1j*2*k**3/3*alphaR)
             alpha = alphaMW
         return alpha
@@ -112,8 +113,9 @@ class CalculateCrossSections:
         self.gamNR_qs = gam_drude
 
 
-    def A_ij(self, dip_i, dip_j, k):
+    def A_ij(self, dip_i, dip_j, w):
         ''' off diagonal block terms in A_tilde '''
+        k = w/c*self.n
         A_ij = np.zeros( (3, 3) ,dtype=complex) 
         r_ij = self.centers[dip_i,:] - self.centers[dip_j,:] # [cm], distance between ith and jth dipole 
         r = np.sqrt(r_ij[0]**2+r_ij[1]**2+r_ij[2]**2)
@@ -129,10 +131,9 @@ class CalculateCrossSections:
         A_ij[2,2] = np.exp(1j*k*r)/r**3*(k**2*(rz*rz-r**2) + (1-1j*k*r)/r**2*(-3*rz*rz+r**2))
         return A_ij
 
-    def alpha_tensor(self, dip_i, k):
+    def alpha_tensor(self, dip_i, w):
         """ Polarizability (3x3 tensor) in the cartesian basis """
         alpha_rotated = np.zeros( (3, 3) ,dtype=complex)
-        w = k*c
         dip_params = DipoleParameters(self.centers, self.orient, self.all_radii, self.n, self.wp, self.eps_inf, self.gamNR_qs)
         # alpha_rotated is the polarizability in a rotated frame, aligned with the long axis of the prolate spheroid
         alpha_rotated[0,0] = dip_params.alpha(w=w, radius=self.all_radii[dip_i, : ], kind='short')
@@ -144,10 +145,9 @@ class CalculateCrossSections:
         alpha = np.matmul(R, np.matmul(alpha_rotated, invR))
         return alpha
 
-    def A_ii(self, dip_i, dip_j, k):
+    def A_ii(self, dip_i, dip_j, w):
         '''On diagonal block terms in A_tilde.'''
-        w = k*c
-        alpha = self.alpha_tensor(dip_i=dip_i, k=k)
+        alpha = self.alpha_tensor(dip_i=dip_i, w=w)
         A_ii = np.linalg.inv(alpha)
         return A_ii
 
@@ -157,9 +157,9 @@ class CalculateCrossSections:
         for i in range(0 , self.num): 
             for j in range(0, self.num):
                 if i == j:  
-                    A_tilde[3*i : 3*(i+1), 3*i : 3*(i+1)] = self.A_ii(dip_i=i, dip_j=i, k=w/c)
+                    A_tilde[3*i : 3*(i+1), 3*i : 3*(i+1)] = self.A_ii(dip_i=i, dip_j=i, w=w)
                 if i != j:
-                    A_tilde[3*i : 3*(i+1), 3*j : 3*(j+1)] = self.A_ij(dip_i=i, dip_j=j, k=w/c)
+                    A_tilde[3*i : 3*(i+1), 3*j : 3*(j+1)] = self.A_ij(dip_i=i, dip_j=j, w=w)
         return A_tilde
 
     def P_tilde(self, w, drive):
@@ -174,7 +174,7 @@ class CalculateCrossSections:
 
     def cross_sects(self, w, drive):
         ''' Works for spheres up to 50 nm radii, and in the window < 3.0 eV '''
-        k = w/c
+        k = w/c*self.n
         P = self.P_tilde(w=w, drive=drive)
         P_each = np.zeros((3, self.num),dtype=complex)
         E_each = np.zeros((3, self.num),dtype=complex)
