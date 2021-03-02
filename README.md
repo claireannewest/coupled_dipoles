@@ -1,1 +1,2 @@
-# coupled_dipoles
+# Coupled Dipole Code
+
