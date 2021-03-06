@@ -60,7 +60,7 @@ class Sphere_Polarizability:
         return a, b
 
     def alpha(self, w, radius): 
-        # returns array of shape (num_freq, )
+
         k = w/c*self.n
         a, b = self.mie_coefficents(w=w,radius=radius)
         alpha = 3/(2.*k**3)*1j*(a)#+b) 
@@ -96,6 +96,8 @@ class CrossSections:
         self.eps_inf = eps_inf
         self.gamNR_qs = gam_drude
         self.dip_params = Sphere_Polarizability(self.centers, self.all_radii, self.n, self.wp, self.eps_inf, self.gamNR_qs)
+        self.num_structs = self.centers.shape[0]
+
 
     def delta_mn(self,m,n):
         if m == n: 
@@ -107,25 +109,25 @@ class CrossSections:
         """ Off diagonal block terms in A_tilde. The shape is [num_freq, 3, 3]
         """
         k = self.w/c*self.n
-        A_ij = np.zeros( (len(self.w), 3, 3) ,dtype=complex) 
-        r = self.centers[dip_i,:] - self.centers[dip_j,:] # [cm], distance between ith and jth particle 
-        magr = np.linalg.norm(r)
+        A_ij = np.zeros( (self.num_structs, len(self.w), 3, 3) ,dtype=complex) 
+        r = self.centers[:,:,dip_i,:] - self.centers[:,:,dip_j,:] # [cm], distance between ith and jth particle 
+        magr = np.sqrt(r[:,:,0]**2 + r[:,:,1]**2 + r[:,:,2]**2)
         for n in range(0,3):
             for m in range(0,3):
-                A_ij[:,n,m] = np.exp(1j*k*magr) / magr**3 *( 
-                            k**2*( r[n]*r[m] - magr**2*self.delta_mn(n+1,m+1) ) + 
-                            (1-1j*k*magr) / magr**2 *(magr**2*self.delta_mn(n+1,m+1)-3*r[n]*r[m]) ) 
-
+                A_ij[:,:,n,m] = np.exp(1j*k*magr) / magr**3 *(
+                           k**2*( r[:,:,n]*r[:,:,m] - magr**2*self.delta_mn(n+1,m+1) ) + 
+                            (1-1j*k*magr) / magr**2 *(magr**2*self.delta_mn(n+1,m+1)-3*r[:,:,n]*r[:,:,m]) 
+                         ) 
         return A_ij
 
     def alpha_tensor(self, dip_i):
         """ Polarizability tensor in the cartesian basis of the single particle.
             This assumes the sphere has an isotropic polarizability. 
         """
-        alpha = np.zeros( (len(self.w), 3, 3) ,dtype=complex)
-        alpha[:,0,0] = self.dip_params.alpha(w=self.w, radius=self.all_radii[dip_i])
-        alpha[:,1,1] = self.dip_params.alpha(w=self.w, radius=self.all_radii[dip_i])
-        alpha[:,2,2] = self.dip_params.alpha(w=self.w, radius=self.all_radii[dip_i])
+        alpha = np.zeros( (self.num_structs, len(self.w), 3, 3) ,dtype=complex)
+        alpha[:,:,0,0] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,dip_i])
+        alpha[:,:,1,1] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,dip_i])
+        alpha[:,:,2,2] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,dip_i])
         return alpha
 
     def A_ii(self, dip_i, dip_j):
@@ -138,44 +140,42 @@ class CrossSections:
     def A_tilde(self):
         """A_tilde = [num_freq, 3*N, 3*N]
         """
-        A_tilde = np.zeros( (len(self.w), 3*self.num, 3*self.num) ,dtype=complex) 
+        A_tilde = np.zeros( (self.num_structs, len(self.w), 3*self.num, 3*self.num) ,dtype=complex) 
         for i in range(0 , self.num): 
             for j in range(0, self.num):
                 if i == j:  
-                    A_tilde[:, 3*i : 3*(i+1), 3*i : 3*(i+1)] = self.A_ii(dip_i=i, dip_j=i)
+                    A_tilde[:, :, 3*i : 3*(i+1), 3*i : 3*(i+1)] = self.A_ii(dip_i=i, dip_j=i)
                 if i != j:
-                    A_tilde[:, 3*i : 3*(i+1), 3*j : 3*(j+1)] = self.A_ij(dip_i=i, dip_j=j)
+                    A_tilde[:, :, 3*i : 3*(i+1), 3*j : 3*(j+1)] = self.A_ij(dip_i=i, dip_j=j)
         return A_tilde
 
     def P_tilde(self, drive):
-        E0_tilde = np.zeros(( len(self.w), 3*self.num, 1 ) )
-        P_tilde = np.zeros(( len(self.w), 3*self.num, 1 ),dtype=complex)
+        E0_tilde = np.zeros((self.num_structs, len(self.w), 3*self.num, 1 ) )
+        P_tilde = np.zeros(( self.num_structs, len(self.w), 3*self.num, 1 ),dtype=complex)
         for i in range(0, self.num):
-            E0_tilde[:, 3*i,:] = drive[0]
-            E0_tilde[:, 3*i+1,:] = drive[1]
-            E0_tilde[:, 3*i+2,:] = drive[2]
+            E0_tilde[:, :, 3*i,:] = drive[0]
+            E0_tilde[:, :, 3*i+1,:] = drive[1]
+            E0_tilde[:, :, 3*i+2,:] = drive[2]
         P_tilde = np.linalg.solve(self.A_tilde(), E0_tilde)
         return P_tilde
 
     def cross_sects(self, drive):
         ''' Works for spheres up to 50 nm radii, and in the window < 3.0 eV '''
         k = self.w/c*self.n
-        # dip_params = DipoleParameters(self.centers, self.all_radii, self.n, self.wp, self.eps_inf, self.gamNR_qs)
-
         P = self.P_tilde(drive=drive)
-        P_each = np.zeros((len(self.w), 3, self.num),dtype=complex)
-        E_each = np.zeros((len(self.w), 3, self.num),dtype=complex)
-        Cext_each = np.zeros((len(self.w), self.num))
-        Cabs_each = np.zeros((len(self.w), self.num))
+        P_each = np.zeros((self.num_structs, len(self.w), 3, self.num),dtype=complex)
+        E_each = np.zeros((self.num_structs, len(self.w), 3, self.num),dtype=complex)
+        Cext_each = np.zeros((self.num_structs, len(self.w), self.num))
+        Cabs_each = np.zeros((self.num_structs, len(self.w), self.num))
         for i in range(0, self.num):
             # Evaluate the cross sections of each particle separately
-            P_each[:, :,i] = P[:, 3*i:3*(i+1), 0]
-            E_each[:, 0,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[i])**(-1)*P_each[:, 0,i]
-            E_each[:, 1,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[i])**(-1)*P_each[:, 1,i]
-            E_each[:, 2,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[i])**(-1)*P_each[:, 2,i]
+            P_each[:, :, :,i] = P[:, :, 3*i:3*(i+1), 0]
+            E_each[:, :, 0,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, i])**(-1)*P_each[:, :, 0,i]
+            E_each[:, :, 1,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, i])**(-1)*P_each[:, :, 1,i]
+            E_each[:, :, 2,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, i])**(-1)*P_each[:, :, 2,i]
 
-            Cext_each[:, i] = 4*np.pi*k*np.imag( np.sum( P_each[:, :,i]*np.conj(E_each[:, :,i]),axis=1 )) *10**8
-            Cabs_each[:, i] = Cext_each[:, i] - 4*np.pi*k*2/3*k**3*np.real( np.sum(P_each[:, :,i]*np.conj(P_each[:, :,i]), axis=1) ) *10**8  
+            Cext_each[:, :, i] = 4*np.pi*k*np.imag( np.sum( P_each[:, :, :,i]*np.conj(E_each[:,:, :,i]),axis=2 )) *10**8
+            Cabs_each[:, :, i] = Cext_each[:, :, i] - 4*np.pi*k*2/3*k**3*np.real( np.sum(P_each[:, :, :,i]*np.conj(P_each[:,:, :,i]), axis=2) ) *10**8  
 
         return Cext_each, Cabs_each
 
