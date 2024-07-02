@@ -4,18 +4,20 @@ op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
 %  table of dielectric functions
 epstab = { epsconst( 1.0^2 ), epstable( 'au_drude.dat' ) };
 
-radius = 30; 
+radius1 = 10; 
+radius2 = 30;
 
-for gap = 70:100:101
+for gap = 40:10:71
     %  diameter of sphere
-    diameter = 2*radius;
+    diameter1 = 2*radius1;
+    diameter2 = 2*radius2;
+
+%      initialize sphere
+    p1 = trisphere( 144, diameter1 );
+    p2 = trisphere( 144, diameter2 );
     
-    %  initialize sphere
-    p1 = trisphere( 144, diameter );
-    p2 = trisphere( 144, diameter );
-    
-    p1 = shift(p1, [0, 0, -radius-gap/2] );
-    p2 = shift(p2, [0, 0, radius+gap/2] );
+    p1 = shift(p1, [0, 0, -radius1-gap/2] );
+    p2 = shift(p2, [0, 0, radius2+gap/2] );
 
     p = comparticle( epstab, { p1, p2 }, [ 2, 1; 2, 1 ], 1, 2, op );
 
@@ -48,32 +50,7 @@ for gap = 70:100:101
 
     en_ev = 1240./enei; 
     plot(en_ev, ext_mcsqrd); hold on;
-    filename = strcat('sphere_homodimer/Spectrum_sph_ret_gap',num2str(gap), 'nm_',num2str(radius),'nm_drude_n1.0.mat');
+    filename = strcat('sphere_heterodimer/Spectrum_sph_ret_gap',num2str(gap), 'nm_',num2str(radius1), '-', num2str(radius2), 'nm_drude_n1.0.mat');
     save(filename, 'en_ev', 'ext_mcsqrd', 'abs_mcsqrd')
 end
-
-
-%%  comparison with Mie theory
-clear;clc
-op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
-enei = linspace( 350, 1200, 200 );
-
-radii = 140;
-diameter = 2*(radii);
-
-mie = miesolver( epstable( 'au_drude.dat' ), epsconst( 1.0^2 ), diameter, op,'lmax',1);
-ext = mie.ext( enei );
-
-sca = mie.sca( enei );
-abs = ext-sca;
-nmsqrd_to_micronsqrd = (10^(-6));
-
-plot(1240./enei, ext*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-
-% legend( 'BEM : x-polarization', 'BEM : y-polarization', 'Mie theory' );
-ext_mcsqrd = reshape(ext*nmsqrd_to_micronsqrd, 1, length( enei ));
-abs_mcsqrd = reshape(abs*nmsqrd_to_micronsqrd, 1, length( enei ));
-sca_mcsqrd = reshape(sca*nmsqrd_to_micronsqrd, 1, length( enei ));
-xlim([1.,3.])
-
-
+beep on;
