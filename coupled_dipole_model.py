@@ -82,13 +82,15 @@ class Sphere_Polarizability:
         return a 
 
 
-    def alpha(self, w, radius): 
+    def alpha(self, w, radius, imageornaw):
         k = w/c*self.n
         if self.shell == False:
             a = self.mie_coefficents(w=w,radius=radius)
         if self.shell != False: 
             a = self.mie_coeff_coated_sphere(w=w, radius=radius)
         alpha = 3/(2.*k**3)*1j*(a)#+b) 
+        if imageornaw is True:
+            alpha = alpha * (-1)
         return alpha
 
 class CrossSections:
@@ -96,7 +98,8 @@ class CrossSections:
         centers, 
         all_radii,
         w, 
-        num, 
+        num,
+        imageornaw,
         n, 
         wp, 
         eps_inf, 
@@ -119,6 +122,7 @@ class CrossSections:
         self.all_radii = all_radii
         self.w = w
         self.num = num
+        self.imageornaw = imageornaw
         self.n = n
         self.wp = wp
         self.eps_inf = eps_inf
@@ -130,10 +134,10 @@ class CrossSections:
         self.num_gap = self.centers.shape[1]
         self.num_freq = self.centers.shape[2]
 
-    def delta_mn(self,m,n):
-        if m == n: 
+    def delta_mn(self, m, n):
+        if m == n:
             return 1
-        else: 
+        else:
             return 0
 
     def A_ij(self, dip_i, dip_j):
@@ -147,8 +151,7 @@ class CrossSections:
             for m in range(0,3):
                 A_ij[:,:,:,n,m] = np.exp(1j*k*magr) / magr**3 *(
                            k**2*( r[:,:,:,n]*r[:,:,:,m] - magr**2*self.delta_mn(n+1,m+1) ) + 
-                            (1-1j*k*magr) / magr**2 *(magr**2*self.delta_mn(n+1,m+1)-3*r[:,:,:,n]*r[:,:,:,m]) 
-                         ) 
+                            (1-1j*k*magr) / magr**2 *(magr**2*self.delta_mn(n+1,m+1)-3*r[:,:,:,n]*r[:,:,:,m]))
         return A_ij
 
     def alpha_tensor(self, dip_i):
@@ -156,9 +159,9 @@ class CrossSections:
             This assumes the sphere has an isotropic polarizability. 
         """
         alpha = np.zeros( (self.num_radii_combs, self.num_gap, self.num_freq, 3, 3) ,dtype=complex)
-        alpha[:,:,:,0,0] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i])
-        alpha[:,:,:,1,1] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i])
-        alpha[:,:,:,2,2] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i])
+        alpha[:,:,:,0,0] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i], imageornaw=self.imageornaw[dip_i])
+        alpha[:,:,:,1,1] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i], imageornaw=self.imageornaw[dip_i])
+        alpha[:,:,:,2,2] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:,:,:,dip_i], imageornaw=self.imageornaw[dip_i])
         return alpha
 
     def A_ii(self, dip_i, dip_j):
@@ -201,9 +204,9 @@ class CrossSections:
         for i in range(0, self.num):
             # Evaluate the cross sections of each particle separately
             P_each[:, :, :, :,i] = P[:, :, :, 3*i:3*(i+1), 0]
-            E_each[:, :, :, 0,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i])**(-1)*P_each[:, :, :, 0,i]
-            E_each[:, :, :, 1,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i])**(-1)*P_each[:, :, :, 1,i]
-            E_each[:, :, :, 2,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i])**(-1)*P_each[:, :, :, 2,i]
+            E_each[:, :, :, 0,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i],imageornaw=self.imageornaw[i])**(-1)*P_each[:, :, :, 0,i]
+            E_each[:, :, :, 1,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i], imageornaw=self.imageornaw[i])**(-1)*P_each[:, :, :, 1,i]
+            E_each[:, :, :, 2,i] = self.dip_params.alpha(w=self.w, radius=self.all_radii[:, :, :, i], imageornaw=self.imageornaw[i])**(-1)*P_each[:, :, :, 2,i]
 
             Cext_each[:, :, :, i] = 4*np.pi*k*np.imag( np.sum( P_each[:, :, :,:, i]*np.conj(E_each[:,:, :,:, i]),axis=3 )) *10**8
             Cabs_each[:, :, :, i] = Cext_each[:, :, :, i] - 4*np.pi*k*2/3*k**3*np.real( np.sum(P_each[:, :, :,:, i]*np.conj(P_each[:,:, :,:, i]), axis=3) ) *10**8  
