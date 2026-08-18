@@ -2,20 +2,21 @@ clc;% clf;
 op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
 
 %  table of dielectric functions
-epstab = { epsconst( 1.0^2 ), epstable( 'au_drude.dat' ) };
+epstab = { epsconst( 1.473^2 ), epstable( 'au_drude.dat' ) };
 
 radius1 = 10; 
-radius2 = 30;
+radius2 = 10;
 
-for gap = 40:10:71
+for gap = 10:10:50
     %  diameter of sphere
+
     diameter1 = 2*radius1;
     diameter2 = 2*radius2;
 
 %      initialize sphere
     p1 = trisphere( 144, diameter1 );
     p2 = trisphere( 144, diameter2 );
-    
+
     p1 = shift(p1, [0, 0, -radius1-gap/2] );
     p2 = shift(p2, [0, 0, radius2+gap/2] );
 

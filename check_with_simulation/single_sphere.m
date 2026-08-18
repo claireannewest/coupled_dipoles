@@ -3,9 +3,25 @@ op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
 
 
 %  table of dielectric functions
-epstab = { epsconst( 1.0^2 ), epstable( 'gold.dat' ) };
+nback = 1.473;
+diel = 'gold.dat';
+epstab = { epsconst( nback^2 ), epstable( diel ) };
+angles = [ 0, 30, 60, 90 ];  % polarization angle from x-axis [degrees]
+enei = linspace( 500, 1000, 200 );
 
-for radius = 10:100:20
+nback_s = num2str( nback );
+if ~contains( nback_s, '.' )
+    nback_s = [ nback_s '.0' ];
+end
+
+if strcmp( diel, 'au_drude.dat' )
+    diel_str = 'drude';
+elseif strcmp( diel, 'gold.dat' )
+    diel_str = 'JC';
+end
+
+
+for radius = 20:20:100
     %  diameter of sphere
     diameter = 2*radius
 
@@ -15,86 +31,35 @@ for radius = 10:100:20
     %  set up BEM solver
     bem = bemsolver( p, op );
 
-    %  plane wave excitation
-    exc = planewave( [ 0, 1, 0 ], [ 1, 0, 0], op );
+    nmsqrd_to_micronsqrd = 1e-6;
+    ext_mcsqrd = zeros( length( angles ), length( enei ) );  %  [n_angles x n_enei]
+    abs_mcsqrd = zeros( length( angles ), length( enei ) );
 
-    %  light wavelength in vacuum
-    enei = linspace( 400, 700, 200 );
+    for ia = 1 : length( angles )
+        theta = angles( ia ) * pi / 180;
+        pol   = [ cos( theta ), sin( theta ), 0 ];
+        dir   = [ -sin( theta ),  cos( theta ), 0 ];  %  propagation perp to pol, in xy-plane
 
-    %  allocate scattering and extinction cross sections
-    sca = zeros( length( enei ), 1 );
-    ext = zeros( length( enei ), 1 );
+        exc = planewave( pol, dir, op );
 
-    %  loop over wavelengths
-    for ien = 1 : length( enei ) 
-      %  surface charge
-      sig = bem \ exc( p, enei( ien ) );
-      %  scattering and extinction cross sections
-      sca( ien, : ) = exc.sca( sig );
-      ext( ien, : ) = exc.ext( sig );
+        sca = zeros( length( enei ), 1 );
+        ext = zeros( length( enei ), 1 );
+
+        for ien = 1 : length( enei )
+            sig           = bem \ exc( p, enei( ien ) );
+            sca( ien, : ) = exc.sca( sig );
+            ext( ien, : ) = exc.ext( sig );
+        end
+
+        ext_mcsqrd( ia, : ) = ext * nmsqrd_to_micronsqrd;
+        abs_mcsqrd( ia, : ) = ( ext - sca ) * nmsqrd_to_micronsqrd;
     end
 
-    abs = ext - sca;
-    nmsqrd_to_micronsqrd = (10^(-6));
-    abs_mcsqrd = reshape(abs*nmsqrd_to_micronsqrd, 1, length( enei ));
-    ext_mcsqrd = reshape(ext*nmsqrd_to_micronsqrd, 1, length( enei ));
+    en_ev = 1240 ./ enei;
+    pol_angles = angles;
 
-    en_ev = 1240./enei; 
+
     plot(enei, abs_mcsqrd); hold on;
-%     filename = strcat('Spectrum_sph_ret_',num2str(radius),'nm_drude_n1.0.mat');
-%     save(filename, 'en_ev', 'ext_mcsqrd', 'abs_mcsqrd');
+    filename = strcat('Spectrum_sph_ret_',num2str(radius),'nm_', diel_str', '_n', nback_s, '.mat');
+    save(filename, 'en_ev', 'ext_mcsqrd', 'abs_mcsqrd');
 end
-
-
-%%  comparison with Mie theory
-clear;clc;
-op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
-enei = linspace( 400, 700, 200 );
-nmsqrd_to_micronsqrd = (10^(-6));
-
-mie_10 = miesolver( epstable( 'au_drude.dat' ), epsconst( 1.^2 ),  2*(10), op,'lmax',10);
-mie_40 = miesolver( epstable( 'au_drude.dat' ), epsconst( 1.^2 ),  2*(40), op,'lmax',10);
-
-
-subplot(1,3,1);
-% plot(enei, (mie_10.ext( enei )-mie_10.sca( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_20.ext( enei )-mie_20.sca( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_30.ext( enei )-mie_30.sca( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_40.ext( enei )-mie_40.sca( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_50.ext( enei )-mie_50.sca( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-
-
-mie_10 = miesolver( epstable( 'gold.dat' ), epsconst( 1.^2 ),  2*(10), op,'lmax',10);
-mie_20 = miesolver( epstable( 'gold.dat' ), epsconst( 1^2 ),  2*(20), op,'lmax',10);
-mie_30 = miesolver( epstable( 'gold.dat' ), epsconst( 1^2 ),  2*(30), op,'lmax',10);
-mie_40 = miesolver( epstable( 'gold.dat' ), epsconst( 1.^2 ),  2*(40), op,'lmax',10);
-mie_50 = miesolver( epstable( 'gold.dat' ), epsconst( 1.^2 ),  2*(50), op,'lmax',10);
-
-plot(enei, (mie_10.ext( enei )-mie_10.sca( enei ))*nmsqrd_to_micronsqrd,':','Linewidth',2);  hold on
-% plot(enei, (mie_20.ext( enei )-mie_20.sca( enei ))*nmsqrd_to_micronsqrd,':','Linewidth',2);  hold on
-% plot(enei, (mie_30.ext( enei )-mie_30.sca( enei ))*nmsqrd_to_micronsqrd,':','Linewidth',2);  hold on
-% plot(enei, (mie_40.ext( enei )-mie_40.sca( enei ))*nmsqrd_to_micronsqrd,':','Linewidth',2);  hold on
-% plot(enei, (mie_50.ext( enei )-mie_50.sca( enei ))*nmsqrd_to_micronsqrd,':','Linewidth',2);  hold on
-
-
-
-% ylim([0,1E-2])
-% 
-% subplot(1,3,2);
-% plot(enei, mie_10.sca( enei )*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, mie_20.sca( enei )*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, mie_30.sca( enei )*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, mie_40.sca( enei )*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, mie_50.sca( enei )*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% 
-% subplot(1,3,3);
-% plot(enei, (mie_10.ext( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_20.ext( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_30.ext( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_40.ext( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% plot(enei, (mie_50.ext( enei ))*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-% 
-
-
-% ylim([0,1E-2])
-

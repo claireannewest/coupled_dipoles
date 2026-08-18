@@ -1,79 +1,79 @@
-clc;% clf;
+clc; clf; clearvars; clear;
+
 op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
 
 %  table of dielectric functions
-epstab = { epsconst( 1.0^2 ), epstable( 'au_drude.dat' ) };
 
-radius = 30; 
+nback = 1.473;
+diel = 'au_drude.dat';
 
-for gap = 70:100:101
-    %  diameter of sphere
-    diameter = 2*radius;
-    
-    %  initialize sphere
-    p1 = trisphere( 144, diameter );
-    p2 = trisphere( 144, diameter );
-    
-    p1 = shift(p1, [0, 0, -radius-gap/2] );
-    p2 = shift(p2, [0, 0, radius+gap/2] );
+epstab = { epsconst( nback^2 ), epstable( diel ) };
+angles = [ 0, 30, 60, 90 ];  % polarization angle from x-axis [degrees]
 
-    p = comparticle( epstab, { p1, p2 }, [ 2, 1; 2, 1 ], 1, 2, op );
+nback_s = num2str( nback );
+if ~contains( nback_s, '.' )
+    nback_s = [ nback_s '.0' ];
+end
 
-    %  set up BEM solver
-    bem = bemsolver( p, op );
-
-    %  plane wave excitation
-    exc = planewave( [ 0, 0, 1 ], [ 1, 0, 0], op );
-
-    %  light wavelength in vacuum
-    enei = linspace( 1240./3.5, 1240./1.0, 500 );
-
-    %  allocate scattering and extinction cross sections
-    sca = zeros( length( enei ), 1 );
-    ext = zeros( length( enei ), 1 );
-
-    %  loop over wavelengths
-    for ien = 1 : length( enei ) 
-      %  surface charge
-      sig = bem \ exc( p, enei( ien ) );
-      %  scattering and extinction cross sections
-      sca( ien, : ) = exc.sca( sig );
-      ext( ien, : ) = exc.ext( sig );
-    end
-
-    abs = ext - sca;
-    nmsqrd_to_micronsqrd = (10^(-6));
-    abs_mcsqrd = reshape(abs*nmsqrd_to_micronsqrd, 1, length( enei ));
-    ext_mcsqrd = reshape(ext*nmsqrd_to_micronsqrd, 1, length( enei ));
-
-    en_ev = 1240./enei; 
-    plot(en_ev, ext_mcsqrd); hold on;
-    filename = strcat('sphere_homodimer/Spectrum_sph_ret_gap',num2str(gap), 'nm_',num2str(radius),'nm_drude_n1.0.mat');
-    save(filename, 'en_ev', 'ext_mcsqrd', 'abs_mcsqrd')
+if strcmp( diel, 'au_drude.dat' )
+    diel_str = 'drude';
+elseif strcmp( diel, 'gold.dat' )
+    diel_str = 'JC';
 end
 
 
-%%  comparison with Mie theory
-clear;clc
-op = bemoptions( 'sim', 'ret', 'waitbar', 0, 'interp', 'curv' );
-enei = linspace( 350, 1200, 200 );
-
-radii = 140;
-diameter = 2*(radii);
-
-mie = miesolver( epstable( 'au_drude.dat' ), epsconst( 1.0^2 ), diameter, op,'lmax',1);
-ext = mie.ext( enei );
-
-sca = mie.sca( enei );
-abs = ext-sca;
-nmsqrd_to_micronsqrd = (10^(-6));
-
-plot(1240./enei, ext*nmsqrd_to_micronsqrd,'Linewidth',2);  hold on
-
-% legend( 'BEM : x-polarization', 'BEM : y-polarization', 'Mie theory' );
-ext_mcsqrd = reshape(ext*nmsqrd_to_micronsqrd, 1, length( enei ));
-abs_mcsqrd = reshape(abs*nmsqrd_to_micronsqrd, 1, length( enei ));
-sca_mcsqrd = reshape(sca*nmsqrd_to_micronsqrd, 1, length( enei ));
-xlim([1.,3.])
 
 
+radius = 25; 
+
+% for gap = 10:10:50
+gap = 30;
+%  diameter of sphere
+diameter = 2*radius;
+
+%  initialize sphere
+p1 = trisphere( 256, diameter );
+p2 = trisphere( 256, diameter );
+
+p1 = shift(p1, [-radius-gap/2, 0, 0, ] );
+p2 = shift(p2, [radius+gap/2, 0, 0] );
+
+p = comparticle( epstab, { p1, p2 }, [ 2, 1; 2, 1 ], 1, 2, op );
+
+%  set up BEM solver
+bem = bemsolver( p, op );
+enei = linspace( 450, 650, 150 );
+
+%  plane wave excitation
+nmsqrd_to_micronsqrd = 1e-6;
+ext_mcsqrd = zeros( length( angles ), length( enei ) );  %  [n_angles x n_enei]
+abs_mcsqrd = zeros( length( angles ), length( enei ) );
+
+for ia = 1 : length( angles )
+    theta = angles( ia ) * pi / 180;
+    pol   = [ cos( theta ), sin( theta ), 0 ];
+    dir   = [ 0, 0, 1 ];  %  propagation perp to pol, in xy-plane
+
+    exc = planewave(pol, dir, op );
+
+    sca = zeros( length( enei ), 1 );
+    ext = zeros( length( enei ), 1 );
+
+    for ien = 1 : length( enei )
+        sig           = bem \ exc( p, enei( ien ) );
+        sca( ien, : ) = exc.sca( sig );
+        ext( ien, : ) = exc.ext( sig );
+    end
+
+    ext_mcsqrd( ia, : ) = ext * nmsqrd_to_micronsqrd;
+    abs_mcsqrd( ia, : ) = ( ext - sca ) * nmsqrd_to_micronsqrd;
+end
+
+en_ev = 1240 ./ enei;
+pol_angles = angles;
+
+
+plot(en_ev, ext_mcsqrd); hold on;
+filename = strcat('sphere_homodimer/Spectrum_sph_ret_gap',num2str(gap), 'nm_',num2str(radius),'nm_drude_n', nback_s, '.mat');
+save(filename, 'en_ev', 'ext_mcsqrd', 'abs_mcsqrd')
+% end
